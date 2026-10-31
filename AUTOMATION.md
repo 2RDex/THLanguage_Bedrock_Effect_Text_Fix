@@ -15,14 +15,17 @@ This repository overlay adds a scheduled GitHub Actions workflow for the fork
 - Applies the existing root-level `mapping.json` to
   `THLanguage_RP/texts/th_TH.lang` only. Existing keys are replaced; missing
   keys are reported and are never added.
-- Preserves all other upstream Resource Pack files. The only permitted pack
-  changes are `texts/th_TH.lang` and, when necessary, the version fields in
-  `manifest.json` (`header.version` and each `modules[].version`). UUIDs remain
-  unchanged.
+- Preserves the upstream Resource Pack files except for the intended
+  translation and metadata updates: `texts/th_TH.lang`, a regenerated
+  `contents.json`, and (when different) the version fields in `manifest.json`
+  (`header.version` and each `modules[].version`). UUIDs remain unchanged.
+- Regenerates `contents.json` in the temporary build copy from the files that
+  actually exist under the Resource Pack root, including nested Subpacks. Paths
+  are relative to the Resource Pack root. The checked-in `THLanguage_RP/` and
+  extracted upstream copy are not modified.
 - Does not generate `en_GB.lang` or `en_US.lang`, and does not rewrite
-  `contents.json`, `languages.json`, or `language_names.json`.
+  `languages.json` or `language_names.json`.
 - Validates the Resource Pack and the resulting `.mcpack` before publishing.
-- In the temporary upstream build copy only, removes the three known stale `contents.json` references under `subpacks/font/` when their PNG files are absent (`default8.png`, `glyph_00.png`, `glyph_0E.png`). It does not fabricate files, does not modify the checked-in `THLanguage_RP/`, and still fails on any other missing content reference. If upstream restores one of these PNGs, its `contents.json` entry is kept.
 - Publishes the `.mcpack` to both GitHub Actions Artifacts and automation-owned GitHub Releases. Automation releases use the `auto-effect-text-fix-` tag prefix so they are separated from manually created releases.
 - Updates `upstream-state.json` only after a successful build/release, or after
   recording a new upstream commit that changed files outside `THLanguage_RP/`.
@@ -54,12 +57,21 @@ must remain single-line strings. Minecraft formatting codes such as `§c` and
 
 ## Versioning
 
-The initial custom build uses the upstream `manifest.json` version. For each
-later custom build, the workflow adopts a newer upstream version when it is
-higher than the last custom version. If the source pack or mapping changes
-without a higher upstream version, it increments the patch component so
-Minecraft can recognize the custom pack update. Both the manifest header and
-module versions are kept in sync. UUIDs are not changed.
+The custom Resource Pack version always matches the upstream `manifest.json`
+version (`header.version`). Manual test runs, mapping changes, and build-logic
+changes never increment the version independently. The manifest header and all
+module versions are kept equal to the upstream version, and UUIDs are not
+changed.
+
+Builds remain distinguishable without changing the Minecraft pack version:
+asset filenames include the upstream commit and mapping hashes, while
+automation Release tags also include the build-logic hash. Re-running the same
+inputs does not overwrite an existing Release or asset.
+
+Because the UUID and version remain the same when only the mapping changes,
+Minecraft may not treat that package as a newer installed pack. To install a
+mapping-only update, remove the previously installed custom pack first, then
+import the new `.mcpack`.
 
 ## Downloads
 

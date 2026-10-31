@@ -276,13 +276,14 @@ def parse_version(value: Any, context: str) -> tuple[int, int, int]:
     return tuple(value)  # type: ignore[return-value]
 
 
-def next_custom_version(upstream_version: tuple[int, int, int], previous: Any) -> tuple[int, int, int]:
-    if previous is None:
-        return upstream_version
-    previous_version = parse_version(previous, "previous custom_version")
-    if upstream_version > previous_version:
-        return upstream_version
-    return previous_version[0], previous_version[1], previous_version[2] + 1
+def resolve_pack_version(upstream_version: tuple[int, int, int]) -> tuple[int, int, int]:
+    """Keep the custom pack version exactly equal to the upstream manifest version.
+
+    Mapping changes, workflow test runs, and build-logic changes must not bump
+    the Minecraft pack version. Build uniqueness is handled separately by the
+    upstream commit, mapping hash, and build-logic hash in asset names and tags.
+    """
+    return upstream_version
 
 
 def set_manifest_version(pack_dir: Path, version: tuple[int, int, int]) -> bool:
@@ -467,7 +468,7 @@ def main() -> int:
         if mapping_report.matched_lines == 0:
             raise ValueError("None of the mapping keys matched upstream th_TH.lang; refusing to publish an unchanged translation pack")
 
-        custom_version = next_custom_version(upstream_version, previous.get("custom_version"))
+        custom_version = resolve_pack_version(upstream_version)
         manifest_changed = set_manifest_version(build_pack_dir, custom_version)
         changed_pack_files = verify_only_expected_pack_changes(source_pack_dir, build_pack_dir)
         custom_validation = validate_folder(build_pack_dir)
