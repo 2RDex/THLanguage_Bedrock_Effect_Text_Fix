@@ -485,7 +485,7 @@ def main() -> int:
         build_mcpack(build_pack_dir, asset_path)
         archive_validation = validate_mcpack(asset_path)
 
-        release_tag = f"auto-effect-text-fix-v{version_string}-{upstream_short}-{mapping_short}-{logic_short}"
+        release_tag = f"effect-text-fix-v{version_string}-{upstream_short}-{mapping_short}-{logic_short}"
         release_title = f"THLanguage Bedrock Effect Text Fix v{version_string}"
         missing_list = mapping_report.missing_keys
         notes = [
