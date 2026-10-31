@@ -1,0 +1,80 @@
+name: Upstream Sync and MCPACK Build
+
+on:
+  schedule:
+    # Every 15 minutes (UTC). GitHub may delay scheduled runs during high load.
+    - cron: "3,18,33,48 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: upstream-sync-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Check upstream and build Resource Pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref_name }}
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Check upstream and prepare MCPACK
+        id: prepare
+        run: python scripts/prepare_build.py --mapping mapping.json
+
+      - name: Upload GitHub Actions Artifact
+        if: steps.prepare.outputs.should_build == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: THLanguage_Bedrock_Effect_Text_Fix-v${{ steps.prepare.outputs.version }}
+          path: |
+            ${{ steps.prepare.outputs.asset_path }}
+            .work/build-report.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Create or update GitHub Release
+        if: steps.prepare.outputs.should_build == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.prepare.outputs.release_tag }}
+          RELEASE_TITLE: ${{ steps.prepare.outputs.release_title }}
+          ASSET_PATH: ${{ steps.prepare.outputs.asset_path }}
+          NOTES_PATH: ${{ steps.prepare.outputs.notes_path }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release already exists; refreshing the MCPACK asset."
+            gh release upload "$RELEASE_TAG" "$ASSET_PATH" --clobber
+          else
+            gh release create "$RELEASE_TAG" "$ASSET_PATH" \
+              --title "$RELEASE_TITLE" \
+              --notes-file "$NOTES_PATH"
+          fi
+
+      - name: Save processed upstream state
+        if: steps.prepare.outputs.state_updated == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp .work/new-state.json upstream-state.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add upstream-state.json
+          if git diff --cached --quiet; then
+            echo "Upstream state is already current."
+            exit 0
+          fi
+          git commit -m "chore: update upstream build state [skip ci]"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
