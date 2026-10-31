@@ -32,15 +32,8 @@
 4. ตรวจสอบไฟล์และโครงสร้าง Resource Pack
 5. สร้างและตรวจสอบไฟล์ `.mcpack`
 6. เผยแพร่ไฟล์ไปยัง GitHub Actions Artifacts และ GitHub Releases
-
-ระบบจะไม่สร้าง Release ใหม่เมื่อไม่มีการเปลี่ยนแปลงที่จำเป็นต่อ Resource Pack, Mapping หรือสคริปต์ Build การเปลี่ยนแปลงเฉพาะ README ของต้นฉบับจะไม่ทำให้เกิดการ Build แพ็กใหม่
-
+   
 **หมายเหตุเกี่ยวกับเวลา:** รอบ 15 นาทีเป็นกำหนดเวลาที่ตั้งไว้สำหรับ GitHub Actions เท่านั้น GitHub อาจเริ่ม Workflow ล่าช้ากว่าเวลาที่กำหนดในบางช่วง จึงไม่ใช่การรับประกันว่าจะอัปเดตทันทีที่ต้นฉบับเปลี่ยนแปลง
-
-### ดาวน์โหลดไฟล์ที่ Build แล้ว
-
-- **GitHub Releases:** [ดาวน์โหลด `.mcpack` รุ่นล่าสุด](https://github.com/2RDeX/THLanguage_Bedrock_Effect_Text_Fix/releases)
-- **GitHub Actions Artifacts:** เข้า [หน้า Actions](https://github.com/2RDeX/THLanguage_Bedrock_Effect_Text_Fix/actions) เลือก Workflow Run ที่สำเร็จล่าสุด แล้วดาวน์โหลด Artifact ของ Run นั้น (Artifact มีระยะเวลาเก็บรักษาตามการตั้งค่า GitHub Actions)
 
 ## 📥 วิธีติดตั้ง
 

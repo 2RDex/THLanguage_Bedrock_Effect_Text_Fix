@@ -11,17 +11,17 @@
     2,
     7
   ],
-  "upstream_pack_sha256": "6eafb0bd50c7b3aff8cabe5c02e6a9457960cedeb30e6d855084cefe32ce143d",
+  "upstream_pack_sha256": "54c8ca55638f1ef3c19051fd11f2c3ade0ace4cc11621151963627a41b32f80c",
   "upstream_pack_git_tree_sha256": "eb0fe608e86204fbfff9752c746801e6b3d36a5bcfeed24e97dcc39681726829",
-  "mapping_sha256": "b95c442e7efa13cfed1e79410303d4017a353a9543812b73b385035918fee18c",
-  "build_logic_sha256": "1ca13d2a5872a35c5e54cb6c0130da8f97606684f30dd511eb58cb9dcf010ff3",
-  "last_checked_utc": "2026-10-31T03:18:11+00:00",
+  "mapping_sha256": "b30666d8dfc72101fdda698f3817058b6034a184695eb3fc290f566bf496a492",
+  "build_logic_sha256": "6837b16f192dbd2032c28630133785e9d10c75391c806456e34d01871f102090",
+  "last_checked_utc": "2026-10-31T04:24:10+00:00",
   "custom_version": [
     1,
     2,
-    7
+    8
   ],
-  "last_release_tag": "auto-effect-text-fix-v1.2.7-52fbf53-b95c442-1ca13d2",
-  "last_asset": "THLanguage_Bedrock_Effect_Text_Fix-v1.2.7-src-52fbf53-map-b95c442.mcpack",
-  "last_build_utc": "2026-10-31T03:18:11+00:00"
+  "last_release_tag": "auto-effect-text-fix-v1.2.8-52fbf53-b30666d-6837b16",
+  "last_asset": "THLanguage_Bedrock_Effect_Text_Fix-v1.2.8-src-52fbf53-map-b30666d.mcpack",
+  "last_build_utc": "2026-10-31T04:24:11+00:00"
 }
