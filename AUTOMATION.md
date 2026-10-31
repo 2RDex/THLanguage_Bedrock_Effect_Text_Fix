@@ -22,6 +22,7 @@ This repository overlay adds a scheduled GitHub Actions workflow for the fork
 - Does not generate `en_GB.lang` or `en_US.lang`, and does not rewrite
   `contents.json`, `languages.json`, or `language_names.json`.
 - Validates the Resource Pack and the resulting `.mcpack` before publishing.
+- In the temporary upstream build copy only, removes the three known stale `contents.json` references under `subpacks/font/` when their PNG files are absent (`default8.png`, `glyph_00.png`, `glyph_0E.png`). It does not fabricate files, does not modify the checked-in `THLanguage_RP/`, and still fails on any other missing content reference. If upstream restores one of these PNGs, its `contents.json` entry is kept.
 - Publishes the `.mcpack` to both GitHub Actions Artifacts and automation-owned GitHub Releases. Automation releases use the `auto-effect-text-fix-` tag prefix so they are separated from manually created releases.
 - Updates `upstream-state.json` only after a successful build/release, or after
   recording a new upstream commit that changed files outside `THLanguage_RP/`.

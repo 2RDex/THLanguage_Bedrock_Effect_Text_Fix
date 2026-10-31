@@ -30,6 +30,15 @@ STATE_FILE = ROOT / "upstream-state.json"
 WORK_DIR = ROOT / ".work"
 DIST_DIR = ROOT / "dist"
 PACK_FOLDER = "THLanguage_RP"
+# The upstream contents.json currently lists these legacy font textures even
+# though they are absent from the upstream repository. Remove only these exact
+# stale references in the temporary build copy; keep them if upstream restores
+# the corresponding files. Any other missing content reference remains fatal.
+KNOWN_STALE_CONTENT_REFERENCES = {
+    "subpacks/font/default8.png",
+    "subpacks/font/glyph_00.png",
+    "subpacks/font/glyph_0E.png",
+}
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -226,6 +235,48 @@ def extract_pack_from_archive(archive_path: Path, destination: Path) -> Path:
     return destination
 
 
+def remove_known_missing_contents_references(pack_dir: Path) -> list[str]:
+    """Drop only the known stale font paths from contents.json in the temp copy.
+
+    The upstream currently references three legacy subpacks/font PNG files that
+    are not present in its Git tree. Removing these stale index entries makes the
+    generated pack internally consistent without fabricating assets or changing
+    the checked-in THLanguage_RP folder. Unknown missing references are untouched
+    and will still fail the strict validator.
+    """
+    contents_path = pack_dir / "contents.json"
+    if not contents_path.is_file():
+        raise ValueError("Required pack file is missing: contents.json")
+
+    try:
+        contents = json.loads(contents_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Cannot read contents.json before stale-reference check: {exc}") from exc
+
+    if not isinstance(contents, dict) or not isinstance(contents.get("content"), list):
+        raise ValueError("contents.json must contain a 'content' array")
+
+    kept_entries: list[Any] = []
+    removed: list[str] = []
+    for entry in contents["content"]:
+        if isinstance(entry, dict) and isinstance(entry.get("path"), str):
+            normalized = PurePosixPath(entry["path"].replace("\\", "/")).as_posix()
+            if normalized in KNOWN_STALE_CONTENT_REFERENCES:
+                candidate = pack_dir.joinpath(*PurePosixPath(normalized).parts)
+                if not candidate.is_file():
+                    removed.append(normalized)
+                    continue
+        kept_entries.append(entry)
+
+    if removed:
+        contents["content"] = kept_entries
+        write_json(contents_path, contents)
+        for path in removed:
+            print(f"[WARN] Removed stale contents.json reference (file absent upstream): {path}")
+
+    return sorted(removed)
+
+
 def parse_version(value: Any, context: str) -> tuple[int, int, int]:
     if not (isinstance(value, list) and len(value) == 3 and all(type(item) is int and item >= 0 for item in value)):
         raise ValueError(f"{context} must be a three-number version array")
@@ -369,6 +420,9 @@ def main() -> int:
         download_upstream_archive(upstream["sha"], upstream_zip)
         extract_pack_from_archive(upstream_zip, source_pack_dir)
 
+        # Repair only the three known stale font references in this temporary
+        # copy. The user's checked-in THLanguage_RP folder is never modified.
+        stale_contents_references_removed = remove_known_missing_contents_references(source_pack_dir)
         source_validation = validate_folder(source_pack_dir)
         source_pack_hash = tree_sha256(source_pack_dir)
         source_manifest = json.loads((source_pack_dir / "manifest.json").read_text(encoding="utf-8"))
@@ -446,6 +500,7 @@ def main() -> int:
             "- Applied the custom mapping to `THLanguage_RP/texts/th_TH.lang` only.",
             "- Updated only the `header.version` and `modules[].version` fields in `manifest.json` when needed so Minecraft can recognize a newer custom pack build.",
             "- Preserved the upstream UUIDs and all other Resource Pack files.",
+            "- Removed only stale `contents.json` references to the three known absent `subpacks/font/` PNG files; the assets were not fabricated and any other missing reference still fails validation.",
             "- Did not generate `en_GB.lang` or `en_US.lang`.",
             "",
             f"### Validation\n- Resource Pack files: {custom_validation['file_count']}\n- MCPACK entries: {archive_validation['archive_entries']}\n- MCPACK ZIP integrity: passed",
@@ -453,6 +508,9 @@ def main() -> int:
             "### Attribution",
             f"This is a community modification of [{UPSTREAM_REPO}](https://github.com/{UPSTREAM_REPO}). Please retain upstream credits and follow the upstream CC BY-NC-SA 4.0 license and any applicable third-party notices.",
         ]
+        if stale_contents_references_removed:
+            notes.extend(["", "### Stale contents.json references removed", "These known legacy font paths were listed upstream but their files were absent:"])
+            notes.extend(f"- `{path}`" for path in stale_contents_references_removed)
         if missing_list:
             notes.extend(["", "### Mapping keys not found in this upstream version", "The following keys were not present, so no new lines were added:"])
             notes.extend(f"- `{key}`" for key in missing_list[:100])
@@ -477,6 +535,7 @@ def main() -> int:
             },
             "manifest_version_adjusted": manifest_changed,
             "changed_pack_files": changed_pack_files,
+            "stale_contents_references_removed": stale_contents_references_removed,
             "source_pack_sha256": source_pack_hash,
             "upstream_pack_git_tree_sha256": pack_git_tree_hash,
             "mapping_sha256": mapping_hash,

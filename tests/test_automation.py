@@ -19,6 +19,7 @@ from prepare_build import (
     get_upstream_pack_tree_hash,
     hash_resource_pack_tree_entries,
     next_custom_version,
+    remove_known_missing_contents_references,
     set_manifest_version,
     verify_only_expected_pack_changes,
 )  # noqa: E402
@@ -185,6 +186,73 @@ class PackTests(unittest.TestCase):
             manifest = json.loads((built / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["header"]["version"], [1, 2, 8])
             self.assertEqual(manifest["modules"][0]["version"], [1, 2, 8])
+
+    def test_removes_only_known_missing_legacy_font_references(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pack = Path(tmp) / "THLanguage_RP"
+            pack.mkdir()
+            self.create_pack(pack)
+            contents_path = pack / "contents.json"
+            contents = json.loads(contents_path.read_text(encoding="utf-8"))
+            contents["content"].extend([
+                {"path": "subpacks/font/default8.png"},
+                {"path": "subpacks/font/glyph_00.png"},
+                {"path": "subpacks/font/glyph_0E.png"},
+            ])
+            contents["version"] = 1
+            contents_path.write_text(json.dumps(contents), encoding="utf-8")
+
+            removed = remove_known_missing_contents_references(pack)
+
+            self.assertEqual(removed, [
+                "subpacks/font/default8.png",
+                "subpacks/font/glyph_00.png",
+                "subpacks/font/glyph_0E.png",
+            ])
+            updated = json.loads(contents_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                [item["path"] for item in updated["content"]],
+                ["manifest.json", "texts/th_TH.lang", "texts/languages.json", "texts/language_names.json"],
+            )
+            self.assertEqual(updated["version"], 1)
+            # The regular strict validator now accepts the cleaned pack.
+            validate_folder(pack)
+
+    def test_keeps_known_font_reference_when_asset_exists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pack = Path(tmp) / "THLanguage_RP"
+            (pack / "subpacks" / "font").mkdir(parents=True)
+            (pack / "subpacks" / "font" / "default8.png").write_bytes(b"png-test")
+            (pack / "contents.json").write_text(
+                json.dumps({"content": [{"path": "subpacks/font/default8.png"}]}),
+                encoding="utf-8",
+            )
+
+            removed = remove_known_missing_contents_references(pack)
+
+            self.assertEqual(removed, [])
+            updated = json.loads((pack / "contents.json").read_text(encoding="utf-8"))
+            self.assertEqual(updated["content"], [{"path": "subpacks/font/default8.png"}])
+
+    def test_unknown_missing_contents_reference_is_not_silently_removed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pack = Path(tmp) / "THLanguage_RP"
+            pack.mkdir()
+            self.create_pack(pack)
+            contents_path = pack / "contents.json"
+            contents = json.loads(contents_path.read_text(encoding="utf-8"))
+            contents["content"].append({"path": "some/other/missing.png"})
+            contents_path.write_text(json.dumps(contents), encoding="utf-8")
+
+            removed = remove_known_missing_contents_references(pack)
+
+            self.assertEqual(removed, [])
+            self.assertIn(
+                {"path": "some/other/missing.png"},
+                json.loads(contents_path.read_text(encoding="utf-8"))["content"],
+            )
+            with self.assertRaisesRegex(ValueError, "contents.json references a missing file"):
+                validate_folder(pack)
 
 
 if __name__ == "__main__":
