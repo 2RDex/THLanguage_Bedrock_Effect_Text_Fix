@@ -5,9 +5,13 @@ This repository overlay adds a scheduled GitHub Actions workflow for the fork
 
 ## What it does
 
-- Checks `MineGarp/THLanguage_Bedrock` on `main` every 15 minutes.
-- Downloads a pinned upstream commit only when the upstream commit or local
-  mapping/build scripts have changed.
+- Checks `MineGarp/THLanguage_Bedrock` on `main` every 15 minutes, and also
+  supports a manual **Run workflow** from the Actions tab.
+- Detects upstream Resource Pack changes by hashing only the Git tree below
+  `THLanguage_RP/`. Updates to upstream `README.md`, `LICENSE`, or other files
+  outside that directory do not trigger an MCPACK build or Release.
+- Downloads the upstream archive only when files under `THLanguage_RP/`, the
+  local `mapping.json`, or the build scripts have changed.
 - Applies the existing root-level `mapping.json` to
   `THLanguage_RP/texts/th_TH.lang` only. Existing keys are replaced; missing
   keys are reported and are never added.
@@ -18,9 +22,9 @@ This repository overlay adds a scheduled GitHub Actions workflow for the fork
 - Does not generate `en_GB.lang` or `en_US.lang`, and does not rewrite
   `contents.json`, `languages.json`, or `language_names.json`.
 - Validates the Resource Pack and the resulting `.mcpack` before publishing.
-- Publishes the `.mcpack` to both GitHub Actions Artifacts and GitHub Releases.
+- Publishes the `.mcpack` to both GitHub Actions Artifacts and automation-owned GitHub Releases. Automation releases use the `auto-effect-text-fix-` tag prefix so they are separated from manually created releases.
 - Updates `upstream-state.json` only after a successful build/release, or after
-  confirming that an upstream commit changed files outside the Resource Pack.
+  recording a new upstream commit that changed files outside `THLanguage_RP/`.
 
 ## Install into the existing fork
 
@@ -32,9 +36,7 @@ This repository overlay adds a scheduled GitHub Actions workflow for the fork
 4. Select **Read and write permissions** and save.
 5. Confirm GitHub Actions is enabled for this fork in the **Actions** tab.
 6. Commit and push the added files to `main`.
-7. The first scheduled run will create the initial custom `.mcpack`. Scheduled
-   runs are not guaranteed to start at the exact minute, so check the Actions
-   tab after the next scheduled interval.
+7. The first scheduled run will create the initial custom `.mcpack`. You can also start a run manually from **Actions → Upstream Sync and MCPACK Build → Run workflow**. Scheduled runs are not guaranteed to start at the exact minute.
 
 No Personal Access Token or third-party secret is required. The workflow uses
 GitHub's automatically provided `GITHUB_TOKEN`.
@@ -62,11 +64,13 @@ module versions are kept in sync. UUIDs are not changed.
 
 - **Actions Artifacts:** available on the successful workflow run; retention is
   set to 90 days (subject to GitHub repository/account limits).
-- **Releases:** persistent download page with the `.mcpack` attached.
+- **Releases:** persistent download page with the `.mcpack` attached. Automation creates a separate release using an `auto-effect-text-fix-` tag. Existing manually created releases are never edited, deleted, or reused. If an automation tag already exists without the expected asset, the workflow stops rather than overwriting anything.
 
-The workflow skips publishing when the upstream commit, Resource Pack content,
-mapping, and build scripts have not changed. A README-only upstream commit does
-not produce a new `.mcpack`.
+The workflow checks only the `THLanguage_RP/` subtree for upstream Resource
+Pack changes. A README-only or LICENSE-only upstream commit outside that folder
+updates the saved upstream commit state but does not download the full archive,
+build a `.mcpack`, or create a Release. A change to the local mapping or build
+scripts still triggers a new build because those directly affect the output.
 
 ## Important GitHub Actions behavior
 

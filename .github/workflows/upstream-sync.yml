@@ -5,6 +5,9 @@ on:
     # Every 15 minutes (UTC). GitHub may delay scheduled runs during high load.
     - cron: "3,18,33,48 * * * *"
 
+  # Allow a maintainer to check/build immediately from the Actions tab.
+  workflow_dispatch:
+
 permissions:
   contents: write
 
@@ -32,6 +35,8 @@ jobs:
 
       - name: Check upstream and prepare MCPACK
         id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: python scripts/prepare_build.py --mapping mapping.json
 
       - name: Upload GitHub Actions Artifact
@@ -45,7 +50,7 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: Create or update GitHub Release
+      - name: Create automation-owned GitHub Release (never overwrite)
         if: steps.prepare.outputs.should_build == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -54,9 +59,18 @@ jobs:
           ASSET_PATH: ${{ steps.prepare.outputs.asset_path }}
           NOTES_PATH: ${{ steps.prepare.outputs.notes_path }}
         run: |
+          ASSET_NAME="$(basename "$ASSET_PATH")"
+
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "Release already exists; refreshing the MCPACK asset."
-            gh release upload "$RELEASE_TAG" "$ASSET_PATH" --clobber
+            if gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | grep -Fxq "$ASSET_NAME"; then
+              echo "The automation release already contains the expected asset; leaving it unchanged."
+            else
+              echo "::error::A release with tag '$RELEASE_TAG' already exists but does not contain '$ASSET_NAME'. Refusing to modify an existing release."
+              exit 1
+            fi
+          elif git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "::error::Tag '$RELEASE_TAG' already exists without a matching release. Refusing to reuse or modify it."
+            exit 1
           else
             gh release create "$RELEASE_TAG" "$ASSET_PATH" \
               --title "$RELEASE_TITLE" \

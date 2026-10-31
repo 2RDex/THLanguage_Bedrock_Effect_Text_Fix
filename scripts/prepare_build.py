@@ -85,14 +85,15 @@ def write_json(path: Path, value: Any) -> None:
 
 
 def request_json(url: str) -> dict[str, Any]:
-    request = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": "THLanguage-Bedrock-Effect-Text-Fix-Actions",
-        },
-    )
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "THLanguage-Bedrock-Effect-Text-Fix-Actions",
+    }
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(url, headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=60) as response:
             value = json.loads(response.read().decode("utf-8"))
@@ -110,14 +111,63 @@ def get_upstream_commit() -> dict[str, Any]:
     result = request_json(API_URL)
     sha = result.get("sha")
     commit = result.get("commit", {})
+    tree_sha = commit.get("tree", {}).get("sha") if isinstance(commit, dict) else None
     if not isinstance(sha, str) or len(sha) < 12:
         raise ValueError("GitHub API did not return a valid upstream commit SHA")
+    if not isinstance(tree_sha, str) or len(tree_sha) < 12:
+        raise ValueError("GitHub API did not return a valid upstream Git tree SHA")
     return {
         "sha": sha,
+        "tree_sha": tree_sha,
         "url": result.get("html_url", f"https://github.com/{UPSTREAM_REPO}/commit/{sha}"),
         "message": str(commit.get("message", "")).splitlines()[0][:200],
         "date": commit.get("committer", {}).get("date"),
     }
+
+
+def hash_resource_pack_tree_entries(entries: list[dict[str, Any]]) -> str:
+    """Hash only file paths and Git blob SHAs inside the THLanguage_RP subtree."""
+    files = [entry for entry in entries if entry.get("type") == "blob"]
+    if not files:
+        raise ValueError(f"Upstream {PACK_FOLDER} Git tree is empty")
+
+    digest = hashlib.sha256()
+    for entry in sorted(files, key=lambda item: str(item.get("path", ""))):
+        path = entry.get("path")
+        blob_sha = entry.get("sha")
+        if not isinstance(path, str) or not path or path.startswith("/") or ".." in PurePosixPath(path).parts:
+            raise ValueError(f"Invalid path in upstream {PACK_FOLDER} Git tree: {path!r}")
+        if not isinstance(blob_sha, str) or len(blob_sha) < 12:
+            raise ValueError(f"Invalid Git blob SHA for {PACK_FOLDER}/{path}")
+        encoded_path = path.encode("utf-8")
+        digest.update(len(encoded_path).to_bytes(4, "big"))
+        digest.update(encoded_path)
+        digest.update(blob_sha.encode("ascii"))
+    return digest.hexdigest()
+
+
+def get_upstream_pack_tree_hash(commit_tree_sha: str) -> str:
+    """Read only the THLanguage_RP subtree when deciding whether upstream changed the pack."""
+    api_root = f"https://api.github.com/repos/{UPSTREAM_REPO}/git/trees/"
+    root_tree = request_json(api_root + commit_tree_sha)
+    root_entries = root_tree.get("tree", [])
+    if not isinstance(root_entries, list):
+        raise ValueError("GitHub API returned an invalid upstream root tree")
+
+    pack_entry = next(
+        (entry for entry in root_entries if entry.get("path") == PACK_FOLDER and entry.get("type") == "tree"),
+        None,
+    )
+    if not isinstance(pack_entry, dict) or not isinstance(pack_entry.get("sha"), str):
+        raise ValueError(f"Upstream repository does not contain the expected {PACK_FOLDER}/ directory")
+
+    pack_tree = request_json(api_root + pack_entry["sha"] + "?recursive=1")
+    if pack_tree.get("truncated") is True:
+        raise RuntimeError(f"GitHub truncated the {PACK_FOLDER} tree response; refusing an incomplete comparison")
+    pack_entries = pack_tree.get("tree", [])
+    if not isinstance(pack_entries, list):
+        raise ValueError(f"GitHub API returned an invalid {PACK_FOLDER} tree")
+    return hash_resource_pack_tree_entries(pack_entries)
 
 
 def download_upstream_archive(commit_sha: str, destination: Path) -> Path:
@@ -275,9 +325,40 @@ def main() -> int:
         same_commit = previous.get("upstream_commit") == upstream["sha"]
         same_mapping = previous.get("mapping_sha256") == mapping_hash
         same_logic = previous.get("build_logic_sha256") == script_hash
-        if same_commit and same_mapping and same_logic:
-            print("[SKIP] Upstream commit, mapping and build scripts have not changed.")
+        has_pack_tree_state = isinstance(previous.get("upstream_pack_git_tree_sha256"), str)
+        if same_commit and same_mapping and same_logic and has_pack_tree_state:
+            print("[SKIP] Upstream commit, THLanguage_RP files, mapping and build scripts have not changed.")
             set_output({"should_build": "false", "state_updated": "false"})
+            return 0
+
+        # Compare only the Git subtree for THLanguage_RP. Changes to README.md,
+        # LICENSE or any other file outside this folder must not cause a pack build.
+        pack_git_tree_hash = get_upstream_pack_tree_hash(upstream["tree_sha"])
+        pack_tree_changed = previous.get("upstream_pack_git_tree_sha256") != pack_git_tree_hash
+        mapping_changed = not same_mapping
+        logic_changed = not same_logic
+
+        # If upstream changed outside THLanguage_RP, remember the new commit but
+        # do not download the repository archive or create a new MCPACK/Release.
+        if previous and not pack_tree_changed and not mapping_changed and not logic_changed:
+            WORK_DIR.mkdir(parents=True, exist_ok=True)
+            new_state: dict[str, Any] = dict(previous)
+            new_state.update({
+                "schema_version": 1,
+                "upstream_repository": UPSTREAM_REPO,
+                "upstream_branch": UPSTREAM_BRANCH,
+                "upstream_commit": upstream["sha"],
+                "upstream_commit_url": upstream["url"],
+                "upstream_commit_message": upstream["message"],
+                "upstream_commit_date": upstream["date"],
+                "upstream_pack_git_tree_sha256": pack_git_tree_hash,
+                "mapping_sha256": mapping_hash,
+                "build_logic_sha256": script_hash,
+                "last_checked_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            })
+            print(f"[SKIP] Upstream commit changed, but no files inside {PACK_FOLDER}/ changed. No MCPACK or Release will be created.")
+            write_json(WORK_DIR / "new-state.json", new_state)
+            set_output({"should_build": "false", "state_updated": "true"})
             return 0
 
         WORK_DIR.mkdir(parents=True, exist_ok=True)
@@ -293,13 +374,8 @@ def main() -> int:
         source_manifest = json.loads((source_pack_dir / "manifest.json").read_text(encoding="utf-8"))
         upstream_version = parse_version(source_manifest["header"]["version"], "upstream manifest header.version")
 
-        previous_pack_hash = previous.get("upstream_pack_sha256")
-        pack_changed = previous_pack_hash != source_pack_hash
-        mapping_changed = not same_mapping
-        logic_changed = not same_logic
-
-        should_build = not previous or pack_changed or mapping_changed or logic_changed
-        new_state: dict[str, Any] = dict(previous)
+        should_build = not previous or pack_tree_changed or mapping_changed or logic_changed
+        new_state = dict(previous)
         new_state.update({
             "schema_version": 1,
             "upstream_repository": UPSTREAM_REPO,
@@ -310,13 +386,14 @@ def main() -> int:
             "upstream_commit_date": upstream["date"],
             "upstream_version": list(upstream_version),
             "upstream_pack_sha256": source_pack_hash,
+            "upstream_pack_git_tree_sha256": pack_git_tree_hash,
             "mapping_sha256": mapping_hash,
             "build_logic_sha256": script_hash,
             "last_checked_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         })
 
         if not should_build:
-            print("[SKIP] Upstream commit changed, but the Resource Pack files are identical and local mapping/build logic did not change.")
+            print(f"[SKIP] No files inside {PACK_FOLDER}/, mapping or build scripts changed.")
             write_json(WORK_DIR / "new-state.json", new_state)
             set_output({"should_build": "false", "state_updated": "true"})
             return 0
@@ -347,8 +424,8 @@ def main() -> int:
         build_mcpack(build_pack_dir, asset_path)
         archive_validation = validate_mcpack(asset_path)
 
-        release_tag = f"effect-text-fix-v{version_string}-{upstream_short}-{mapping_short}-{logic_short}"
-        release_title = f"THLanguage Bedrock Effect Text Fix v{version_string}"
+        release_tag = f"auto-effect-text-fix-v{version_string}-{upstream_short}-{mapping_short}-{logic_short}"
+        release_title = f"[Auto] THLanguage Bedrock Effect Text Fix v{version_string}"
         missing_list = mapping_report.missing_keys
         notes = [
             f"## THLanguage Bedrock Effect Text Fix v{version_string}",
@@ -401,6 +478,7 @@ def main() -> int:
             "manifest_version_adjusted": manifest_changed,
             "changed_pack_files": changed_pack_files,
             "source_pack_sha256": source_pack_hash,
+            "upstream_pack_git_tree_sha256": pack_git_tree_hash,
             "mapping_sha256": mapping_hash,
             "build_logic_sha256": script_hash,
             "validation": {

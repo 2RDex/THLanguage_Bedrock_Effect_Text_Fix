@@ -4,6 +4,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
@@ -12,8 +13,11 @@ sys.path.insert(0, str(SCRIPTS))
 from update_lang import apply_mapping, load_mapping  # noqa: E402
 from build_mcpack import build_mcpack  # noqa: E402
 from check_pack import validate_folder, validate_mcpack  # noqa: E402
+import prepare_build  # noqa: E402
 from prepare_build import (
     extract_pack_from_archive,
+    get_upstream_pack_tree_hash,
+    hash_resource_pack_tree_entries,
     next_custom_version,
     set_manifest_version,
     verify_only_expected_pack_changes,
@@ -123,6 +127,44 @@ class PackTests(unittest.TestCase):
             extracted = extract_pack_from_archive(archive_path, root / "extracted")
             self.assertTrue((extracted / "manifest.json").is_file())
             self.assertTrue((extracted / "texts" / "th_TH.lang").is_file())
+
+    def test_upstream_tree_hash_uses_only_files_in_resource_pack_subtree(self):
+        pack_entries_a = [
+            {"path": "manifest.json", "type": "blob", "sha": "a" * 40},
+            {"path": "texts/th_TH.lang", "type": "blob", "sha": "b" * 40},
+        ]
+        pack_entries_b = [
+            {"path": "texts/th_TH.lang", "type": "blob", "sha": "b" * 40},
+            {"path": "manifest.json", "type": "blob", "sha": "a" * 40},
+        ]
+        self.assertEqual(hash_resource_pack_tree_entries(pack_entries_a), hash_resource_pack_tree_entries(pack_entries_b))
+        changed_pack = [
+            {"path": "manifest.json", "type": "blob", "sha": "a" * 40},
+            {"path": "texts/th_TH.lang", "type": "blob", "sha": "c" * 40},
+        ]
+        self.assertNotEqual(hash_resource_pack_tree_entries(pack_entries_a), hash_resource_pack_tree_entries(changed_pack))
+
+    def test_upstream_pack_detection_queries_only_the_THLanguage_RP_subtree(self):
+        root_tree = {
+            "tree": [
+                {"path": "README.md", "type": "blob", "sha": "d" * 40},
+                {"path": "LICENSE", "type": "blob", "sha": "e" * 40},
+                {"path": "THLanguage_RP", "type": "tree", "sha": "f" * 40},
+            ]
+        }
+        pack_tree = {
+            "truncated": False,
+            "tree": [
+                {"path": "manifest.json", "type": "blob", "sha": "a" * 40},
+                {"path": "texts/th_TH.lang", "type": "blob", "sha": "b" * 40},
+            ],
+        }
+        with patch.object(prepare_build, "request_json", side_effect=[root_tree, pack_tree]) as request:
+            result = get_upstream_pack_tree_hash("1" * 40)
+        self.assertEqual(result, hash_resource_pack_tree_entries(pack_tree["tree"]))
+        self.assertEqual(request.call_count, 2)
+        self.assertTrue(request.call_args_list[0].args[0].endswith("/git/trees/" + "1" * 40))
+        self.assertTrue(request.call_args_list[1].args[0].endswith("/git/trees/" + "f" * 40 + "?recursive=1"))
 
     def test_version_bumps_patch_when_upstream_version_is_not_newer(self):
         self.assertEqual(next_custom_version((1, 2, 7), [1, 2, 7]), (1, 2, 8))
