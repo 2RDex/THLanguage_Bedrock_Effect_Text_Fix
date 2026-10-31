@@ -30,17 +30,6 @@ STATE_FILE = ROOT / "upstream-state.json"
 WORK_DIR = ROOT / ".work"
 DIST_DIR = ROOT / "dist"
 PACK_FOLDER = "THLanguage_RP"
-# The upstream contents.json currently lists these legacy font textures even
-# though they are absent from the upstream repository. Remove only these exact
-# stale references in the temporary build copy; keep them if upstream restores
-# the corresponding files. Any other missing content reference remains fatal.
-KNOWN_STALE_CONTENT_REFERENCES = {
-    "subpacks/font/default8.png",
-    "subpacks/font/glyph_00.png",
-    "subpacks/font/glyph_0E.png",
-}
-
-
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -235,46 +224,50 @@ def extract_pack_from_archive(archive_path: Path, destination: Path) -> Path:
     return destination
 
 
-def remove_known_missing_contents_references(pack_dir: Path) -> list[str]:
-    """Drop only the known stale font paths from contents.json in the temp copy.
+def generate_contents_json(pack_dir: Path) -> list[str]:
+    """Regenerate contents.json from files present in a temporary pack copy.
 
-    The upstream currently references three legacy subpacks/font PNG files that
-    are not present in its Git tree. Removing these stale index entries makes the
-    generated pack internally consistent without fabricating assets or changing
-    the checked-in THLanguage_RP folder. Unknown missing references are untouched
-    and will still fail the strict validator.
+    All paths are relative to the Resource Pack root and use POSIX separators.
+    The contents.json index includes its own path, matching the upstream pack
+    convention. The workflow calls this only on .work/build-pack, never on the checked-in
+    THLanguage_RP directory or the untouched upstream extraction.
     """
-    contents_path = pack_dir / "contents.json"
-    if not contents_path.is_file():
-        raise ValueError("Required pack file is missing: contents.json")
+    if not pack_dir.is_dir():
+        raise ValueError(f"Resource pack directory does not exist: {pack_dir}")
 
-    try:
-        contents = json.loads(contents_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise ValueError(f"Cannot read contents.json before stale-reference check: {exc}") from exc
+    file_paths: set[str] = set()
+    for path in pack_dir.rglob("*"):
+        if path.is_symlink():
+            raise ValueError(
+                f"Symbolic links are not allowed in the Resource Pack: "
+                f"{path.relative_to(pack_dir).as_posix()}"
+            )
+        if not path.is_file():
+            continue
 
-    if not isinstance(contents, dict) or not isinstance(contents.get("content"), list):
-        raise ValueError("contents.json must contain a 'content' array")
+        relative = path.relative_to(pack_dir).as_posix()
+        parsed = PurePosixPath(relative)
+        if parsed.is_absolute() or ".." in parsed.parts or not relative:
+            raise ValueError(f"Unsafe file path in Resource Pack: {relative!r}")
+        file_paths.add(relative)
 
-    kept_entries: list[Any] = []
-    removed: list[str] = []
-    for entry in contents["content"]:
-        if isinstance(entry, dict) and isinstance(entry.get("path"), str):
-            normalized = PurePosixPath(entry["path"].replace("\\", "/")).as_posix()
-            if normalized in KNOWN_STALE_CONTENT_REFERENCES:
-                candidate = pack_dir.joinpath(*PurePosixPath(normalized).parts)
-                if not candidate.is_file():
-                    removed.append(normalized)
-                    continue
-        kept_entries.append(entry)
+    if "manifest.json" not in file_paths:
+        raise ValueError("Required pack file is missing: manifest.json")
 
-    if removed:
-        contents["content"] = kept_entries
-        write_json(contents_path, contents)
-        for path in removed:
-            print(f"[WARN] Removed stale contents.json reference (file absent upstream): {path}")
-
-    return sorted(removed)
+    # contents.json is part of the pack and lists itself, as the upstream
+    # contents.json format does. Add it explicitly because it is rewritten.
+    file_paths.add("contents.json")
+    ordered_paths = sorted(file_paths)
+    contents = {
+        "content": [{"path": relative} for relative in ordered_paths],
+        "version": 1,
+    }
+    write_json(pack_dir / "contents.json", contents)
+    print(
+        "[INFO] Regenerated contents.json from "
+        f"{len(ordered_paths)} existing Resource Pack files."
+    )
+    return ordered_paths
 
 
 def parse_version(value: Any, context: str) -> tuple[int, int, int]:
@@ -321,13 +314,23 @@ def set_output(values: dict[str, str]) -> None:
 def verify_only_expected_pack_changes(source_dir: Path, built_dir: Path) -> list[str]:
     source_files = {path.relative_to(source_dir).as_posix(): path for path in source_dir.rglob("*") if path.is_file()}
     built_files = {path.relative_to(built_dir).as_posix(): path for path in built_dir.rglob("*") if path.is_file()}
-    if source_files.keys() != built_files.keys():
-        missing = sorted(source_files.keys() - built_files.keys())
-        added = sorted(built_files.keys() - source_files.keys())
-        raise ValueError(f"Build changed the Resource Pack file set (missing={missing[:10]}, added={added[:10]})")
+    missing = sorted(source_files.keys() - built_files.keys())
+    added = sorted(built_files.keys() - source_files.keys())
+    unexpected_added = [name for name in added if name != "contents.json"]
+    if missing or unexpected_added:
+        raise ValueError(
+            "Build changed the Resource Pack file set "
+            f"(missing={missing[:10]}, added={unexpected_added[:10]})"
+        )
 
-    changed = [name for name in sorted(source_files) if sha256_file(source_files[name]) != sha256_file(built_files[name])]
-    unexpected = sorted(set(changed) - {"texts/th_TH.lang", "manifest.json"})
+    changed = [
+        name for name in sorted(source_files)
+        if name in built_files and sha256_file(source_files[name]) != sha256_file(built_files[name])
+    ]
+    if "contents.json" in added:
+        changed.append("contents.json")
+    changed.sort()
+    unexpected = sorted(set(changed) - {"texts/th_TH.lang", "manifest.json", "contents.json"})
     if unexpected:
         raise ValueError(f"Unexpected Resource Pack files changed: {unexpected}")
 
@@ -420,10 +423,9 @@ def main() -> int:
         download_upstream_archive(upstream["sha"], upstream_zip)
         extract_pack_from_archive(upstream_zip, source_pack_dir)
 
-        # Repair only the three known stale font references in this temporary
-        # copy. The user's checked-in THLanguage_RP folder is never modified.
-        stale_contents_references_removed = remove_known_missing_contents_references(source_pack_dir)
-        source_validation = validate_folder(source_pack_dir)
+        # Keep the extracted upstream pack untouched. Its contents.json may be
+        # outdated, so strict validation happens only after a fresh index is
+        # generated in the temporary build copy below.
         source_pack_hash = tree_sha256(source_pack_dir)
         source_manifest = json.loads((source_pack_dir / "manifest.json").read_text(encoding="utf-8"))
         upstream_version = parse_version(source_manifest["header"]["version"], "upstream manifest header.version")
@@ -456,6 +458,10 @@ def main() -> int:
             shutil.rmtree(build_pack_dir)
         shutil.copytree(source_pack_dir, build_pack_dir)
 
+        # Rebuild the index from the actual files in the exact folder that will
+        # be validated and packed. This fixes stale/misplaced Subpack paths.
+        generated_contents_entries = generate_contents_json(build_pack_dir)
+
         source_lang = build_pack_dir / "texts" / "th_TH.lang"
         mapping_report = apply_mapping(source_lang, source_lang, mapping)
         if mapping_report.matched_lines == 0:
@@ -484,38 +490,33 @@ def main() -> int:
         notes = [
             f"## THLanguage Bedrock Effect Text Fix v{version_string}",
             "",
-            "Build created automatically from the latest MineGarp upstream Resource Pack.",
+            "สร้างแพ็กโดยอัตโนมัติจาก Resource Pack เวอร์ชันล่าสุดของ MineGarp",
             "",
-            f"- **Upstream:** [{UPSTREAM_REPO}]({upstream['url']})",
-            f"- **Upstream commit:** `{upstream['sha']}`",
-            f"- **Upstream pack version:** `{'.'.join(str(x) for x in upstream_version)}`",
-            f"- **Custom pack version:** `{version_string}`",
-            f"- **Mapping entries:** {mapping_report.mapping_entries}",
-            f"- **Matched mapping keys:** {mapping_report.matched_keys}",
-            f"- **Replaced lines:** {mapping_report.matched_lines}",
-            f"- **Changed lines:** {mapping_report.changed_lines}",
-            f"- **Missing mapping keys:** {len(missing_list)} (not added to the language file)",
+            f"- **ต้นฉบับ:** [{UPSTREAM_REPO}]({upstream['url']})",
+            f"- **Upstream Commit:** `{upstream['sha']}`",
+            f"- **เวอร์ชัน Resource Pack ต้นฉบับ:** `{'.'.join(str(x) for x in upstream_version)}`",
+            f"- **เวอร์ชัน Resource Pack ที่ปรับแต่ง:** `{version_string}`",
+            f"- **จำนวนรายการใน Mapping:** {mapping_report.mapping_entries}",
+            f"- **Key ใน Mapping ที่ตรงกับต้นฉบับ:** {mapping_report.matched_keys}",
+            f"- **จำนวนบรรทัดที่จับคู่และแทนที่:** {mapping_report.matched_lines}",
+            f"- **จำนวนบรรทัดที่เปลี่ยนแปลง:** {mapping_report.changed_lines}",
+            f"- **Key ใน Mapping ที่ไม่พบในต้นฉบับ:** {len(missing_list)} (ไม่มีการเพิ่มลงในไฟล์ภาษา)",
             "",
-            "### What changed",
-            "- Applied the custom mapping to `THLanguage_RP/texts/th_TH.lang` only.",
-            "- Updated only the `header.version` and `modules[].version` fields in `manifest.json` when needed so Minecraft can recognize a newer custom pack build.",
-            "- Preserved the upstream UUIDs and all other Resource Pack files.",
-            "- Removed only stale `contents.json` references to the three known absent `subpacks/font/` PNG files; the assets were not fabricated and any other missing reference still fails validation.",
-            "- Did not generate `en_GB.lang` or `en_US.lang`.",
+            "### ✨ สิ่งที่เปลี่ยนแปลง",
+            "- ใช้ Mapping ที่กำหนดเองเฉพาะกับ `THLanguage_RP/texts/th_TH.lang` เท่านั้น",
+            "- ปรับเฉพาะฟิลด์ `header.version` และ `modules[].version` ใน `manifest.json` เมื่อจำเป็น เพื่อให้ Minecraft ตรวจพบ Resource Pack เวอร์ชันใหม่",
+            "- คง UUID ของต้นฉบับและไฟล์ Resource Pack อื่นๆไว้ตามเดิม ยกเว้น `contents.json` ที่สร้างใหม่จากไฟล์จริง",
             "",
-            f"### Validation\n- Resource Pack files: {custom_validation['file_count']}\n- MCPACK entries: {archive_validation['archive_entries']}\n- MCPACK ZIP integrity: passed",
+            f"### 🔍 ผลการตรวจสอบ\n- จำนวนไฟล์ Resource Pack: {custom_validation['file_count']}\n- จำนวนรายการภายใน MCPACK: {archive_validation['archive_entries']}\n- ความสมบูรณ์ของไฟล์ MCPACK ZIP: ผ่านการตรวจสอบ",
             "",
-            "### Attribution",
-            f"This is a community modification of [{UPSTREAM_REPO}](https://github.com/{UPSTREAM_REPO}). Please retain upstream credits and follow the upstream CC BY-NC-SA 4.0 license and any applicable third-party notices.",
+            "### 📜 เครดิตและลิขสิทธิ์",
+            f"โปรเจกต์นี้เป็นผลงานดัดแปลงโดยชุมชนจาก [{UPSTREAM_REPO}](https://github.com/{UPSTREAM_REPO}) โปรดคงเครดิตของผู้พัฒนาต้นฉบับ และปฏิบัติตามเงื่อนไขสัญญาอนุญาต CC BY-NC-SA 4.0 ของต้นฉบับ รวมถึงประกาศลิขสิทธิ์ของบุคคลที่สามที่เกี่ยวข้อง",
         ]
-        if stale_contents_references_removed:
-            notes.extend(["", "### Stale contents.json references removed", "These known legacy font paths were listed upstream but their files were absent:"])
-            notes.extend(f"- `{path}`" for path in stale_contents_references_removed)
         if missing_list:
-            notes.extend(["", "### Mapping keys not found in this upstream version", "The following keys were not present, so no new lines were added:"])
+            notes.extend(["", "### คีย์ใน Mapping ที่ไม่พบในต้นฉบับเวอร์ชันนี้", "คีย์ต่อไปนี้ไม่มีอยู่ในไฟล์ภาษาของต้นฉบับ จึงไม่มีการเพิ่มบรรทัดใหม่ลงในไฟล์ภาษา:"])
             notes.extend(f"- `{key}`" for key in missing_list[:100])
             if len(missing_list) > 100:
-                notes.append(f"- ... and {len(missing_list) - 100} more (see build report)")
+                notes.append(f"- ... และอีก {len(missing_list) - 100} รายการ (ดูรายงานการ Build)")
         notes_path = WORK_DIR / "release-notes.md"
         notes_path.write_text("\n".join(notes) + "\n", encoding="utf-8")
 
@@ -535,13 +536,12 @@ def main() -> int:
             },
             "manifest_version_adjusted": manifest_changed,
             "changed_pack_files": changed_pack_files,
-            "stale_contents_references_removed": stale_contents_references_removed,
+            "contents_entries_generated": len(generated_contents_entries),
             "source_pack_sha256": source_pack_hash,
             "upstream_pack_git_tree_sha256": pack_git_tree_hash,
             "mapping_sha256": mapping_hash,
             "build_logic_sha256": script_hash,
             "validation": {
-                "source_pack": source_validation,
                 "custom_pack": custom_validation,
                 "mcpack": archive_validation,
             },

@@ -61,7 +61,6 @@
   "potion.damageBoost.linger.name": "§c(Lingering Potion of Strength)§r น้ำยาแห่งความแข็งแกร่งแบบระเหย",
   "potion.digSlowDown": "§c(Mining Fatigue)§r ขุดช้า",
   "potion.digSpeed": "§c(Haste)§r ขุดเร็ว",
-  "potion.effects.whenDrank": "เมื่อนำไปใช้:",
   "potion.empty": "§c(No Effects)§r ไม่มีเอฟเฟกต์",
   "potion.emptyPotion.name": "§c(Water Bottle)§r ขวดน้ำ",
   "potion.emptyPotion.splash.name": "§c(Splash Water Bottle)§r ขวดน้ำแบบปา",
@@ -175,5 +174,10 @@
   "effect.weaving": "§c(Weaving)§r ถักทอ",
   "effect.wind_charged": "§c(Wind Charged)§r ติดประจุลม",
   "effect.darkness": "§c(Darkness)§r มืดมิด",
-  "effect.customNautilus": "§c(Breath of the Nautilus)§r ลมหายใจแห่งหอยงวงช้าง"
+  "effect.customNautilus": "§c(Breath of the Nautilus)§r ลมหายใจแห่งหอยงวงช้าง",
+  "effect.freezing": "§c(Freezing)§r เยือกแข็ง",
+  "potion.freezing": "§c(Freezing)§r เยือกแข็ง",
+  "potion.freezing.name": "§c(Potion of Freezing)§r น้ำยาเยือกแข็ง",
+  "potion.freezing.splash.name": "§c(Splash Potion of Freezing)§r น้ำยาเยือกแข็งแบบปา",
+  "potion.freezing.linger.name": "§c(Lingering Potion of Freezing)§r น้ำยาเยือกแข็งแบบระเหย"
 }
