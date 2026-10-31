@@ -1,5 +1,27 @@
 {
   "schema_version": 1,
   "upstream_repository": "MineGarp/THLanguage_Bedrock",
-  "upstream_branch": "main"
+  "upstream_branch": "main",
+  "upstream_commit": "52fbf53e1f12e87104344ed7ff594d82abfa742e",
+  "upstream_commit_url": "https://github.com/MineGarp/THLanguage_Bedrock/commit/52fbf53e1f12e87104344ed7ff594d82abfa742e",
+  "upstream_commit_message": "Merge pull request #32 from MineGarp/26.60",
+  "upstream_commit_date": "2026-10-27T15:58:16Z",
+  "upstream_version": [
+    1,
+    2,
+    7
+  ],
+  "upstream_pack_sha256": "6eafb0bd50c7b3aff8cabe5c02e6a9457960cedeb30e6d855084cefe32ce143d",
+  "upstream_pack_git_tree_sha256": "eb0fe608e86204fbfff9752c746801e6b3d36a5bcfeed24e97dcc39681726829",
+  "mapping_sha256": "b95c442e7efa13cfed1e79410303d4017a353a9543812b73b385035918fee18c",
+  "build_logic_sha256": "1ca13d2a5872a35c5e54cb6c0130da8f97606684f30dd511eb58cb9dcf010ff3",
+  "last_checked_utc": "2026-10-31T03:18:11+00:00",
+  "custom_version": [
+    1,
+    2,
+    7
+  ],
+  "last_release_tag": "auto-effect-text-fix-v1.2.7-52fbf53-b95c442-1ca13d2",
+  "last_asset": "THLanguage_Bedrock_Effect_Text_Fix-v1.2.7-src-52fbf53-map-b95c442.mcpack",
+  "last_build_utc": "2026-10-31T03:18:11+00:00"
 }
