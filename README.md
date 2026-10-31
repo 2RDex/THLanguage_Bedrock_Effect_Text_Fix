@@ -35,11 +35,6 @@
    
 **หมายเหตุเกี่ยวกับเวลา:** รอบ 15 นาทีเป็นกำหนดเวลาที่ตั้งไว้สำหรับ GitHub Actions เท่านั้น GitHub อาจเริ่ม Workflow ล่าช้ากว่าเวลาที่กำหนดในบางช่วง จึงไม่ใช่การรับประกันว่าจะอัปเดตทันทีที่ต้นฉบับเปลี่ยนแปลง
 
-### ดาวน์โหลดไฟล์ที่ Build แล้ว
-
-- **GitHub Releases:** [ดาวน์โหลด](https://github.com/2RDeX/THLanguage_Bedrock_Effect_Text_Fix/releases)
-
-
 ## 📥 วิธีติดตั้ง
 
 1. ดาวน์โหลดไฟล์ `.mcpack` จากหน้า [Releases](https://github.com/2RDeX/THLanguage_Bedrock_Effect_Text_Fix/releases)
