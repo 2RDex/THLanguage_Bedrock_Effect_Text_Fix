@@ -37,8 +37,8 @@
 
 ### ดาวน์โหลดไฟล์ที่ Build แล้ว
 
-- **GitHub Releases:** [ดาวน์โหลด `.mcpack` รุ่นล่าสุด](https://github.com/2RDeX/THLanguage_Bedrock_Effect_Text_Fix/releases)
-- **GitHub Actions Artifacts:** เข้า [หน้า Actions](https://github.com/2RDeX/THLanguage_Bedrock_Effect_Text_Fix/actions) เลือก Workflow Run ที่สำเร็จล่าสุด แล้วดาวน์โหลด Artifact ของ Run นั้น (Artifact มีระยะเวลาเก็บรักษาตามการตั้งค่า GitHub Actions)
+- **GitHub Releases:** [ดาวน์โหลด](https://github.com/2RDeX/THLanguage_Bedrock_Effect_Text_Fix/releases)
+
 
 ## 📥 วิธีติดตั้ง
 
