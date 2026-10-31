@@ -2,6 +2,7 @@
 
 [![GitHub Actions](https://github.com/2RDeX/THLanguage_Bedrock_Effect_Text_Fix/actions/workflows/upstream-sync.yml/badge.svg?branch=main)](https://github.com/2RDeX/THLanguage_Bedrock_Effect_Text_Fix/actions/workflows/upstream-sync.yml)
 [![GitHub Releases](https://img.shields.io/github/v/release/2RDeX/THLanguage_Bedrock_Effect_Text_Fix?display_name=tag)](https://github.com/2RDeX/THLanguage_Bedrock_Effect_Text_Fix/releases)
+![GitHub Downloads](https://img.shields.io/github/downloads/2RDex/THLanguage_Bedrock_Effect_Text_Fix/total)
 
 **THLanguage Bedrock Effect Text Fix** เป็นรีซอร์ซแพ็กภาษาไทยสำหรับ **Minecraft: Bedrock Edition** ที่พัฒนาต่อยอดจาก [MineGarp/THLanguage_Bedrock](https://github.com/MineGarp/THLanguage_Bedrock) โดยเน้นปรับปรุงคำแปลและข้อความที่เกี่ยวข้องกับ Effect ให้เข้าใจง่ายยิ่งขึ้น
 
